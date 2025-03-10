@@ -1,89 +1,94 @@
 import numpy as np
+from qiskit_optimization import QuadraticProgram
 from qiskit_aer import Aer
-from qiskit.circuit.library import EfficientSU2
-from qiskit_algorithms import VQE
-from qiskit_algorithms.optimizers import COBYLA
-from qiskit.quantum_info import SparsePauliOp
-from qiskit.primitives import Estimator
 from qiskit import transpile
-import matplotlib.pyplot as plt 
-from qiskit.visualization import plot_histogram
+from qiskit_optimization.converters import QuadraticProgramToQubo
+from qiskit.primitives import Estimator
+from qiskit_algorithms import VQE
+from qiskit.circuit.library import EfficientSU2
+from qiskit_algorithms.optimizers import COBYLA
 
-np.random.seed(42)  
-num_jobs = 4
-num_machines = 3
-num_slots = num_jobs  
+num_jobs = 5
+num_machines = 2
 
-operations = np.random.randint(0, num_machines, size=(num_jobs, num_machines))
-print(f"Casual assignment job to machine:\n {operations}")
+# Matrix of cost_matrix[j][m] = assign Job j a Machine m
+cost_matrix = np.random.randint(1, 10, size=(num_jobs, num_machines))
+print("Matrix of cost (Job x Machine):\n", cost_matrix)
 
+qp = QuadraticProgram()
 
-num_qubits = num_jobs * num_slots
-
-qubo_terms = []
-qubo_weights = []
-
-# H1 = -SUM(Xj,t) indicate job j can be execute at slot t 
-# 1 job assign at 1 slot t 
+# Added  binary variable x_{j,m}: 1 if Job j is on Machine m, 0 othrewise
 for j in range(num_jobs):
-    for t in range(num_slots):
-        qubit_idx = j * num_slots + t # idx job j at time t 
-        qubo_terms.append([qubit_idx])  
-        qubo_weights.append(-1)  
+    for m in range(num_machines):
+        qp.binary_var(name=f"x_{j}_{m}")
 
-# H2 = SUM SUM (2Xj1,t Xj2,t)
-# Xjt indicate if job j assign slot t 
-# if 2 job assign same slot cost increase 
-for m in range(num_machines):
-    for t in range(num_slots):
-        for j1 in range(num_jobs): # fist job 
-            for j2 in range(j1 + 1, num_jobs): # second job where j2 > j1
-                q1 = j1 * num_slots + t # qb1 job j1 at time t
-                q2 = j2 * num_slots + t # qb2 job j2 at time t 
-                qubo_terms.append([q1, q2]) 
-                qubo_weights.append(2)  # penalty for overlapping assignment 
+# Objj fun minimize sum of cost cost_matrix[j,m]*x_{j,m}
+linear_obj = {}
+for j in range(num_jobs):
+    for m in range(num_machines):
+        linear_obj[f"x_{j}_{m}"] = cost_matrix[j, m]
+qp.minimize(linear=linear_obj)
 
-qubo_terms_fixed = []
-for term in qubo_terms:
-    pauli_string = ['I'] * num_qubits  # init I string with all qubit 
-    for index in term:                 
-        pauli_string[index] = 'Z'      # change I with Z qubit involved in a constraint
-    qubo_terms_fixed.append(''.join(pauli_string))
+# Every job assign 1 machine
+for j in range(num_jobs):
+    qp.linear_constraint(
+        {f"x_{j}_{m}": 1 for m in range(num_machines)},
+        sense='==',
+        rhs=1
+    )
 
-hamiltonian = SparsePauliOp.from_list(list(zip(qubo_terms_fixed, qubo_weights)))
 
-ansatz = EfficientSU2(num_qubits=num_qubits)
+conv = QuadraticProgramToQubo()
+qubo = conv.convert(qp)
+operator, offset = qubo.to_ising()
 
-# find parameter antsaz calculate the quantistic state
-simulator = Aer.get_backend('aer_simulator_statevector')
+ansatz = EfficientSU2(operator.num_qubits)
 
 optimizer = COBYLA(maxiter=1000)
 
-estimator = Estimator()
+vqe = VQE(estimator=Estimator(), ansatz=ansatz, optimizer=optimizer)
 
-vqe = VQE(estimator=estimator, ansatz=ansatz, optimizer=optimizer)
+print("\nExecution VQE...")
+result_vqe = vqe.compute_minimum_eigenvalue(operator)
 
-result = vqe.compute_minimum_eigenvalue(operator=hamiltonian)
+print(f"\nMin energy found: {result_vqe.eigenvalue.real:.4f}")
+print("Best parameter found:")
+for i, (param, val) in enumerate(result_vqe.optimal_parameters.items()):
+    print(f"{param}: {val:.4f}")
 
-print(f"Min energy found: {result.eigenvalue.real}")
-for param, value in result.optimal_parameters.items():
-    print(f"{param}: {value:.4f}") 
-
-
-# assign optimal parameter to antsaz 
-optimal_circuit = ansatz.assign_parameters(result.optimal_parameters)
-
+optimal_circuit = ansatz.assign_parameters(result_vqe.optimal_parameters)
 optimal_circuit.measure_all()
 
-# using measure for find solution
-simulator = Aer.get_backend('aer_simulator')
-
-transpiled_circuit = transpile(optimal_circuit, simulator)
-
-job = simulator.run(transpiled_circuit, shots=2048)  
+backend = Aer.get_backend('aer_simulator')
+transpiled_circuit = transpile(optimal_circuit, backend)
+shots = 1024
+job = backend.run(transpiled_circuit, shots=shots)
 result_sim = job.result()
-counts = result_sim.get_counts() 
+counts = result_sim.get_counts()
 
-sorted_counts = dict(sorted(counts.items(), key=lambda item: item[1], reverse=True)[:10])
 
-print(sorted_counts)
+# Order ascending
+sorted_counts = dict(sorted(counts.items(), key=lambda x: x[1], reverse=True))
+
+print("\n 10 bitstring most frequent:")
+for i, (bitstring, cnt) in enumerate(sorted_counts.items()):
+    if i < 10:
+        print(f"{bitstring} -> {cnt} occurrences")
+    else:
+        break
+
+best_bitstring = next(iter(sorted_counts))  # most frequent
+bit_list = list(reversed(best_bitstring))  # reverse for qiskit order
+print(f"\n Bitstring best (most frequent): {best_bitstring}")
+
+assignments = [[] for _ in range(num_jobs)]
+idx = 0
+for j in range(num_jobs):
+    for m in range(num_machines):
+        if bit_list[idx] == '1':
+            assignments[j].append(m)
+        idx += 1
+
+print("\n Assignment found bitstring (Job -> List of Machine):")
+for j in range(num_jobs):
+    print(f"Job {j} assign at machine {assignments[j]}")
