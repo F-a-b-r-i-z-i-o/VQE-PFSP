@@ -1,4 +1,4 @@
-from qiskit.circuit.library import RealAmplitudes
+from qiskit.circuit.library import RealAmplitudes, EfficientSU2
 from qiskit.primitives import StatevectorSampler
 from qiskit_algorithms.optimizers import SPSA, COBYLA
 import itertools
@@ -74,43 +74,54 @@ class vqe_pfsp:
         self.problem = prob
         self.problem.nj = nj
 
-    def create_ansatz(self, ans="Real", reps=1):
+    def create_ansatz(self, reps=1):
         fact = np.prod(range(1, self.problem.nj + 1))
-        nqb = int(0.5 + np.log2(fact))
+        nqb = int(0.99 + np.log2(fact))
         self.ansatz = RealAmplitudes(nqb, reps=reps)
         self.npar = self.ansatz.num_parameters
         print(f"created ansatz with {nqb} qubits and {self.npar} parameters")
         self.ansatz.measure_all()
 
     def find_greedy_classical_solution(self):
-        return list(range(self.problem.nj))
+
+        # Estimate total time of elaboration for each job 
+        job_total_times = [(job, sum(self.problem.ptime[job])) for job in range(self.problem.nj)]
+        
+        # Order job in ascending order by total time  ( most longe first )
+        greedy_permutation = [job for job, _ in sorted(job_total_times, key=lambda x: -x[1])]
+      
+        return greedy_permutation
 
     def classical_solution_to_params(self, permutation):
+        perturbation = 0.05
+
+        # Calculate the total number of possible permutations (nj!).
         fact = math.factorial(self.problem.nj)
+        # Calculate the number of qubits needed to represent all permutations.
         nqubits = int(np.ceil(np.log2(fact)))
+        
         permutation_index = None
+        # Find the index of the given permutation with respect to all possible permutations
         for idx, perm in enumerate(itertools.permutations(range(self.problem.nj))):
             if list(perm) == permutation:
                 permutation_index = idx
                 break
-        if permutation_index is None:
-            raise ValueError("Invalid permutation provided")
-
+        
+        # Converts the index of the permutation to a binary string.
         bin_index = format(permutation_index, f'0{nqubits}b')
-
-        reps = self.ansatz.reps
-        skip_final = self.ansatz._skip_final_rotation_layer
-        n_blocks = reps + (0 if skip_final else 1)
 
         theta_init = np.zeros(self.ansatz.num_parameters)
 
-        idx = 0
-        for block in range(n_blocks):
-            for q in range(nqubits):
-                theta_init[idx] = 0.0 if bin_index[q] == '1' else np.pi
-                idx += 1
-        return theta_init
+        for idx in range(self.ansatz.num_parameters):
+            # Use idx module nqubits to avoid out-of-bound index errors
+            bit_value = bin_index[idx % nqubits]
+            
+            if bit_value == '1':
+                theta_init[idx] = np.random.uniform(0, perturbation)
+            else:
+                theta_init[idx] = np.pi + np.random.uniform(0, perturbation)
 
+        return theta_init
 
     def objf_avg(self, params):
         counts = self.simulate(params)
@@ -165,10 +176,15 @@ class vqe_pfsp:
 
 
 def run():
-    prob = PFSProblem.load("tai20_5_0.fsp")
-    vqe = vqe_pfsp(prob, 4)
-    vqe.create_ansatz("EffSU2", 1)
+    prob = PFSProblem.load("tai20_5_1.fsp")
+    vqe = vqe_pfsp(prob, 7)
+    vqe.create_ansatz(1)
     vqe.run()
 
 if __name__ == "__main__":
     run()
+
+# istanza - run -(seed = run ) - numero di tentativo - energia - numero successi
+
+
+# 4,5,6
