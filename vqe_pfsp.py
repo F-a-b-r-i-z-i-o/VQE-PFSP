@@ -232,7 +232,7 @@ class vqe_pfsp:
         return log_results
 
     
-    def run_experiments(instance_pattern="tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=3, seed=None):
+    def run_experiments(instance_pattern="tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=3):
         all_logs = []
         os.makedirs("results", exist_ok=True)
 
