@@ -138,24 +138,30 @@ class vqe_pfsp:
         counts = res.data.meas.get_counts()
         return counts
 
-    def run(self, num_tries=10, max_iter_spa=500, max_iter_cobyla=500, instance_name="", run_id=0):
-        fmin, opt = self.problem.find_optima()
+    def run(self, num_tries=10, max_iter_spa=1000, max_iter_cobyla=1000, instance_name="", run_id=0):
+      
+        fmin, opt_solutions = self.problem.find_optima()
+        print(f"Theoretical min value (makespan): {fmin}")
 
-        samples = [
-            (s, self.objf_avg(s)) for s in (
-                2 * np.pi * np.random.random(self.npar) for _ in range(num_tries**2)
-            )
-        ]
-
+       
+        samples = []
+        for _ in range(num_tries**2):
+            x_rand = 2 * np.pi * np.random.random(self.npar)
+            samples.append((x_rand, self.objf_avg(x_rand)))
+        
         x_classic = self.find_greedy_classical_solution()
         ws_params = self.classical_solution_to_params(x_classic)
         cost_ws = self.objf_avg(ws_params)
         samples.append((ws_params, cost_ws))
-
+        
+        
         samples.sort(key=lambda c: c[1])
 
         max_num_success = 0
         best_energy = np.inf
+
+        best_lowest_energy = None
+        best_lowest_energy_prob = None
 
         log_results = []
 
@@ -163,14 +169,34 @@ class vqe_pfsp:
             x0 = samples[r][0]
             init_fun = samples[r][1]
 
+            # SPSA
             res_spsa = SPSA(maxiter=max_iter_spa).minimize(fun=self.objf_avg, x0=x0)
+
+            # COBYLA
             res_cobyla = COBYLA(maxiter=max_iter_cobyla).minimize(fun=self.objf_avg, x0=res_spsa.x)
-
+            
             counts = self.simulate(res_cobyla.x)
-            num_success = sum(freq * (self.problem.evaluateb(bs[::-1]) == fmin) for bs, freq in counts.items())
+            nshots = 1024
+            
+            # calcolate probability of find fmin 
+            num_success = sum(
+                freq for bs, freq in counts.items() 
+                if self.problem.evaluateb(bs[::-1]) == fmin
+            )
+            prob_opt = num_success / nshots
 
-            prob_opt = num_success / 1024
-
+            # Find the lowest energy and its probability
+            lowest_energy = min(
+                self.problem.evaluateb(bs[::-1])
+                for bs, freq in counts.items()
+            )
+            
+            # Find the probability of the lowest energy
+            lowest_energy_prob = sum(
+                freq for bs, freq in counts.items()
+                if self.problem.evaluateb(bs[::-1]) == lowest_energy
+            ) / nshots
+            
             log_results.append({
                 "instance": instance_name,
                 "run": run_id,
@@ -178,56 +204,63 @@ class vqe_pfsp:
                 "e_min": fmin,
                 "initial_average": init_fun,
                 "final_average": res_cobyla.fun,
-                "prob_opt": prob_opt
+                "prob_opt": prob_opt,
+                "lowest_energy_iteration": best_lowest_energy,
+                "lowest_energy_prob_iteration": best_lowest_energy_prob
             })
-
+            
             if num_success > max_num_success:
                 max_num_success = num_success
                 best_energy = res_cobyla.fun
+                best_lowest_energy = lowest_energy
+                best_lowest_energy_prob = lowest_energy_prob
 
         log_results.append({
             "instance": instance_name,
             "run": run_id,
-            "e_min": fmin,
             "iteration": "best",
+            "e_min": fmin,
             "initial_average": None,
             "final_average": best_energy,
-            "prob_opt": max_num_success / 1024
+            "prob_opt": max_num_success / 1024,
+            "lowest_energy_iteration": best_lowest_energy,
+            "lowest_energy_prob_iteration": best_lowest_energy_prob
         })
 
         return log_results
 
-    def run_experiments(instance_pattern="tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=3):
+    
+    def run_experiments(instance_pattern="tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=3, seed=None):
         all_logs = []
-
-
         os.makedirs("results", exist_ok=True)
 
         for nj in jobs_list:
             for instance_file in sorted(glob.glob(instance_pattern)):
-                prob = PFSProblem.load(instance_file)
                 instance_name = os.path.basename(instance_file)
                 print(f"Processing instance: {instance_name}, Jobs: {nj}")
 
+                prob = PFSProblem.load(instance_file)
                 vqe = vqe_pfsp(prob, nj)
                 vqe.create_ansatz(reps=1)
 
                 for run_id in range(1, runs_per_instance + 1):
                     print(f"Running instance: {instance_name}, Jobs: {nj}, Run: {run_id}")
-                    logs = vqe.run(num_tries=3, max_iter_spa=500, max_iter_cobyla=500,
-                                instance_name=instance_name, run_id=run_id)
-
+                    logs = vqe.run(
+                        num_tries=3,
+                        max_iter_spa=500,
+                        max_iter_cobyla=500,
+                        instance_name=instance_name,
+                        run_id=run_id
+                    )
                     all_logs.extend(logs)
 
-        df = pd.DataFrame(all_logs)
-        csv_path = os.path.join("results", "risultati_vqe_pfsp.csv")
-        df.to_csv(csv_path, index=False)
-        print(f"Results saved to {csv_path}")
-        print(df)
+                    df = pd.DataFrame(all_logs)
+                    csv_path = os.path.join("results", "risultati_vqe_pfsp.csv")
+                    df.to_csv(csv_path, index=False)
+        
 
-# Esecuzione degli esperimenti con dimensioni 4, 5 e 6
 if __name__ == "__main__":
-    vqe_pfsp.run_experiments("tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=5)
+    vqe_pfsp.run_experiments("taillard/tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=5)
 
 
 # istanza - run -(seed = run ) - numero di tentativo - energia - numero successi
