@@ -5,6 +5,9 @@ import itertools
 import numpy as np
 from scipy.optimize import minimize
 import math
+import pandas as pd 
+import os 
+import glob
 
 simulator = StatevectorSampler()
 
@@ -135,9 +138,8 @@ class vqe_pfsp:
         counts = res.data.meas.get_counts()
         return counts
 
-    def run(self, num_tries=10, max_iter_spa=500, max_iter_cobyla=500):
+    def run(self, num_tries=10, max_iter_spa=500, max_iter_cobyla=500, instance_name="", run_id=0):
         fmin, opt = self.problem.find_optima()
-        print(f"minimum {fmin}, number of optima {len(opt)}")
 
         samples = [
             (s, self.objf_avg(s)) for s in (
@@ -155,6 +157,8 @@ class vqe_pfsp:
         max_num_success = 0
         best_energy = np.inf
 
+        log_results = []
+
         for r in range(num_tries):
             x0 = samples[r][0]
             init_fun = samples[r][1]
@@ -165,24 +169,66 @@ class vqe_pfsp:
             counts = self.simulate(res_cobyla.x)
             num_success = sum(freq * (self.problem.evaluateb(bs[::-1]) == fmin) for bs, freq in counts.items())
 
-            print(f"{r+1} Initial {init_fun:.3f}, final average {res_cobyla.fun:.3f} Prob. opt. {num_success/1024:.3f}")
+            prob_opt = num_success / 1024
+
+            log_results.append({
+                "instance": instance_name,
+                "run": run_id,
+                "iteration": r + 1,
+                "e_min": fmin,
+                "initial_average": init_fun,
+                "final_average": res_cobyla.fun,
+                "prob_opt": prob_opt
+            })
 
             if num_success > max_num_success:
                 max_num_success = num_success
                 best_energy = res_cobyla.fun
 
-        print(f"Best result average energy {best_energy:.3f} Prob. opt. {max_num_success/1024:.3f}")
+        log_results.append({
+            "instance": instance_name,
+            "run": run_id,
+            "e_min": fmin,
+            "iteration": "best",
+            "initial_average": None,
+            "final_average": best_energy,
+            "prob_opt": max_num_success / 1024
+        })
+
+        return log_results
+
+    def run_experiments(instance_pattern="tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=3):
+        all_logs = []
 
 
+        os.makedirs("results", exist_ok=True)
 
-def run():
-    prob = PFSProblem.load("tai20_5_1.fsp")
-    vqe = vqe_pfsp(prob, 7)
-    vqe.create_ansatz(1)
-    vqe.run()
+        for nj in jobs_list:
+            for instance_file in sorted(glob.glob(instance_pattern)):
+                prob = PFSProblem.load(instance_file)
+                instance_name = os.path.basename(instance_file)
+                print(f"Processing instance: {instance_name}, Jobs: {nj}")
 
+                vqe = vqe_pfsp(prob, nj)
+                vqe.create_ansatz(reps=1)
+
+                for run_id in range(1, runs_per_instance + 1):
+                    print(f"Running instance: {instance_name}, Jobs: {nj}, Run: {run_id}")
+                    logs = vqe.run(num_tries=3, max_iter_spa=500, max_iter_cobyla=500,
+                                instance_name=instance_name, run_id=run_id)
+
+                    all_logs.extend(logs)
+
+        df = pd.DataFrame(all_logs)
+        csv_path = os.path.join("results", "risultati_vqe_pfsp.csv")
+        df.to_csv(csv_path, index=False)
+        print(f"Results saved to {csv_path}")
+        print(df)
+
+# Esecuzione degli esperimenti con dimensioni 4, 5 e 6
 if __name__ == "__main__":
-    run()
+    vqe_pfsp.run_experiments("tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=5)
+
 
 # istanza - run -(seed = run ) - numero di tentativo - energia - numero successi
 
