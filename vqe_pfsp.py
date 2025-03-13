@@ -200,7 +200,8 @@ class vqe_pfsp:
             log_results.append({
                 "instance": instance_name,
                 "run": run_id,
-                "iteration": r + 1,
+                "n_job": self.problem.nj,
+                "n_tries": r + 1,
                 "e_min": fmin,
                 "initial_average": init_fun,
                 "final_average": res_cobyla.fun,
@@ -218,7 +219,8 @@ class vqe_pfsp:
         log_results.append({
             "instance": instance_name,
             "run": run_id,
-            "iteration": "best",
+            "n_job": self.problem.nj,
+            "n_tries": "best",
             "e_min": fmin,
             "initial_average": None,
             "final_average": best_energy,
@@ -246,24 +248,19 @@ class vqe_pfsp:
                 for run_id in range(1, runs_per_instance + 1):
                     print(f"Running instance: {instance_name}, Jobs: {nj}, Run: {run_id}")
                     logs = vqe.run(
-                        num_tries=3,
-                        max_iter_spa=500,
-                        max_iter_cobyla=500,
+                        num_tries=10,
+                        max_iter_spa=1000,
+                        max_iter_cobyla=1000,
                         instance_name=instance_name,
                         run_id=run_id
                     )
                     all_logs.extend(logs)
 
                     df = pd.DataFrame(all_logs)
-                    csv_path = os.path.join("results", "risultati_vqe_pfsp.csv")
+                    csv_path = os.path.join("results", "results_vqe_pfsp.csv")
                     df.to_csv(csv_path, index=False)
         
 
 if __name__ == "__main__":
     vqe_pfsp.run_experiments("taillard/tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=5)
 
-
-# istanza - run -(seed = run ) - numero di tentativo - energia - numero successi
-
-
-# 4,5,6
