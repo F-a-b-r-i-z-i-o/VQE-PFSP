@@ -154,14 +154,7 @@ class vqe_pfsp:
         cost_ws = self.objf_avg(ws_params)
         samples.append((ws_params, cost_ws))
         
-        
         samples.sort(key=lambda c: c[1])
-
-        max_num_success = 0
-        best_energy = np.inf
-
-        best_lowest_energy = None
-        best_lowest_energy_prob = None
 
         log_results = []
 
@@ -184,19 +177,7 @@ class vqe_pfsp:
                 if self.problem.evaluateb(bs[::-1]) == fmin
             )
             prob_opt = num_success / nshots
-
-            # Find the lowest energy and its probability
-            lowest_energy = min(
-                self.problem.evaluateb(bs[::-1])
-                for bs, freq in counts.items()
-            )
-            
-            # Find the probability of the lowest energy
-            lowest_energy_prob = sum(
-                freq for bs, freq in counts.items()
-                if self.problem.evaluateb(bs[::-1]) == lowest_energy
-            ) / nshots
-            
+           
             log_results.append({
                 "instance": instance_name,
                 "run": run_id,
@@ -205,29 +186,9 @@ class vqe_pfsp:
                 "e_min": fmin,
                 "initial_average": init_fun,
                 "final_average": res_cobyla.fun,
-                "prob_opt": prob_opt,
-                "lowest_energy_iteration": best_lowest_energy,
-                "lowest_energy_prob_iteration": best_lowest_energy_prob
+                "prob_opt": prob_opt
             })
             
-            if num_success > max_num_success:
-                max_num_success = num_success
-                best_energy = res_cobyla.fun
-                best_lowest_energy = lowest_energy
-                best_lowest_energy_prob = lowest_energy_prob
-
-        log_results.append({
-            "instance": instance_name,
-            "run": run_id,
-            "n_job": self.problem.nj,
-            "n_tries": "best",
-            "e_min": fmin,
-            "initial_average": None,
-            "final_average": best_energy,
-            "prob_opt": max_num_success / 1024,
-            "lowest_energy_iteration": best_lowest_energy,
-            "lowest_energy_prob_iteration": best_lowest_energy_prob
-        })
 
         return log_results
 
@@ -262,5 +223,5 @@ class vqe_pfsp:
         
 
 if __name__ == "__main__":
-    vqe_pfsp.run_experiments("taillard/tai20_5_*.fsp", jobs_list=[4, 5, 6], runs_per_instance=5)
+    vqe_pfsp.run_experiments("taillard/tai20_5_*.fsp", jobs_list=[2, 3], runs_per_instance=5)
 
