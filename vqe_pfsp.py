@@ -149,10 +149,10 @@ class vqe_pfsp:
             x_rand = 2 * np.pi * np.random.random(self.npar)
             samples.append((x_rand, self.objf_avg(x_rand)))
         
-        x_classic = self.find_greedy_classical_solution()
-        ws_params = self.classical_solution_to_params(x_classic)
-        cost_ws = self.objf_avg(ws_params)
-        samples.append((ws_params, cost_ws))
+        # x_classic = self.find_greedy_classical_solution()
+        # ws_params = self.classical_solution_to_params(x_classic)
+        # cost_ws = self.objf_avg(ws_params)
+        # samples.append((ws_params, cost_ws))
         
         samples.sort(key=lambda c: c[1])
 
@@ -223,5 +223,5 @@ class vqe_pfsp:
         
 
 if __name__ == "__main__":
-    vqe_pfsp.run_experiments("taillard/tai20_5_*.fsp", jobs_list=[2, 3], runs_per_instance=5)
+    vqe_pfsp.run_experiments("taillard/tai20_5_*.fsp", jobs_list=[2, 3, 4, 5, 6], runs_per_instance=5)
 
