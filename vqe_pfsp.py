@@ -1,10 +1,8 @@
-from qiskit.circuit.library import RealAmplitudes, EfficientSU2
+from qiskit.circuit.library import RealAmplitudes
 from qiskit.primitives import StatevectorSampler
 from qiskit_algorithms.optimizers import SPSA, COBYLA
 import itertools
 import numpy as np
-from scipy.optimize import minimize
-import math
 import pandas as pd 
 import os 
 import glob
@@ -85,47 +83,6 @@ class vqe_pfsp:
         print(f"created ansatz with {nqb} qubits and {self.npar} parameters")
         self.ansatz.measure_all()
 
-    def find_greedy_classical_solution(self):
-
-        # Estimate total time of elaboration for each job 
-        job_total_times = [(job, sum(self.problem.ptime[job])) for job in range(self.problem.nj)]
-        
-        # Order job in ascending order by total time  ( most longe first )
-        greedy_permutation = [job for job, _ in sorted(job_total_times, key=lambda x: -x[1])]
-      
-        return greedy_permutation
-
-    def classical_solution_to_params(self, permutation):
-        perturbation = 0.05
-
-        # Calculate the total number of possible permutations (nj!).
-        fact = math.factorial(self.problem.nj)
-        # Calculate the number of qubits needed to represent all permutations.
-        nqubits = int(np.ceil(np.log2(fact)))
-        
-        permutation_index = None
-        # Find the index of the given permutation with respect to all possible permutations
-        for idx, perm in enumerate(itertools.permutations(range(self.problem.nj))):
-            if list(perm) == permutation:
-                permutation_index = idx
-                break
-        
-        # Converts the index of the permutation to a binary string.
-        bin_index = format(permutation_index, f'0{nqubits}b')
-
-        theta_init = np.zeros(self.ansatz.num_parameters)
-
-        for idx in range(self.ansatz.num_parameters):
-            # Use idx module nqubits to avoid out-of-bound index errors
-            bit_value = bin_index[idx % nqubits]
-            
-            if bit_value == '1':
-                theta_init[idx] = np.random.uniform(0, perturbation)
-            else:
-                theta_init[idx] = np.pi + np.random.uniform(0, perturbation)
-
-        return theta_init
-
     def objf_avg(self, params):
         counts = self.simulate(params)
         total = sum(freq * self.problem.evaluateb(bs[::-1]) for bs, freq in counts.items())
@@ -148,11 +105,6 @@ class vqe_pfsp:
         for _ in range(num_tries**2):
             x_rand = 2 * np.pi * np.random.random(self.npar)
             samples.append((x_rand, self.objf_avg(x_rand)))
-        
-        # x_classic = self.find_greedy_classical_solution()
-        # ws_params = self.classical_solution_to_params(x_classic)
-        # cost_ws = self.objf_avg(ws_params)
-        # samples.append((ws_params, cost_ws))
         
         samples.sort(key=lambda c: c[1])
 
