@@ -18,9 +18,8 @@ avg_prob = (
                .reset_index(name="prob_opt")
 )
 
-df_filtered = avg_prob[avg_prob["prob_opt"] > 0.8]
 
-matrix = df_filtered.pivot(index="instance", columns="n_job", values="prob_opt")
+matrix = avg_prob.pivot(index="instance", columns="n_job", values="prob_opt")
 matrix = matrix.fillna(0)
 
 
