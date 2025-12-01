@@ -19,7 +19,7 @@ dill==0.3.9
 docplex==2.29.241
 executing==2.2.0
 Flask==3.1.1
-fonttools==4.55.6
+fonttools==4.61.0
 gast==0.6.0
 geopandas==1.1.1
 ibm-cloud-sdk-core==3.22.1
