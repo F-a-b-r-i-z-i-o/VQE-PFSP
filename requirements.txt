@@ -83,7 +83,7 @@ tomlkit==0.13.2
 traitlets==5.14.3
 typing_extensions==4.12.2
 tzdata==2025.1
-urllib3==2.6.0
+urllib3==2.6.3
 wcwidth==0.2.13
 websocket-client==1.8.0
 websockets==14.2
